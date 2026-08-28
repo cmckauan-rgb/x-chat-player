@@ -1,6 +1,7 @@
 const REDIRECT_URI = 'https://cmckauan-rgb.github.io/x-chat-player/callback.html';
 const AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize';
-const ME_URL = 'https://api.x.com/2/users/me?user.fields=username,name,profile_image_url';
+const WORKER_BASE = 'https://x-chat-player.cmckauan.workers.dev';
+const ME_URL = `${WORKER_BASE}/x/me`;
 const SCOPES = ['tweet.read', 'users.read', 'dm.read', 'offline.access'].join(' ');
 const COOKIE_PATH = '/x-chat-player/';
 
@@ -79,18 +80,31 @@ async function validateSession() {
 
   $('setupCard').classList.add('hidden');
   $('connectedCard').classList.remove('hidden');
+  $('accountInfo').textContent = 'Validando sua sessão pelo Cloudflare Worker…';
 
   try {
     const res = await fetch(ME_URL, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store'
     });
 
-    if (!res.ok) throw new Error(`X API respondeu ${res.status}`);
-    const json = await res.json();
+    const text = await res.text();
+    let json = {};
+    try { json = JSON.parse(text); } catch (_) {}
+
+    if (!res.ok) {
+      const detail = json?.detail || json?.error || text || `HTTP ${res.status}`;
+      throw new Error(detail);
+    }
+
     const user = json.data;
     $('accountInfo').textContent = user?.username
-      ? `Conectado como @${user.username}. Próxima etapa: ler conversas e mídias do X Chat.`
-      : 'Conectado ao X. Próxima etapa: ler as mídias do X Chat.';
+      ? `Conectado como @${user.username}. OAuth e acesso à API validados.`
+      : 'Conectado ao X. OAuth e acesso à API validados.';
+
+    if ($('libraryState')) {
+      $('libraryState').innerHTML = '<div class="play">▶</div><p>Conexão validada. Próxima etapa: carregar os vídeos do X Chat.</p>';
+    }
   } catch (error) {
     $('accountInfo').textContent = `OAuth concluído, mas a validação da API falhou: ${error.message}`;
   }
