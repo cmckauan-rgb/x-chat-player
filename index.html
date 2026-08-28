@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <title>X Chat Player</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="brand">𝕏</div>
+      <div>
+        <p class="eyebrow">PROTÓTIPO</p>
+        <h1>X Chat Player</h1>
+        <p class="muted">Entre com sua conta do X usando OAuth 2.0 + PKCE. Nenhum Client Secret é salvo neste site.</p>
+      </div>
+    </section>
+
+    <section class="card" id="setupCard">
+      <h2>Conectar ao X</h2>
+      <label for="clientId">Client ID do OAuth 2.0</label>
+      <input id="clientId" type="text" autocomplete="off" spellcheck="false" placeholder="Cole apenas o Client ID">
+      <p class="hint">O Client ID não é secreto. Não cole Client Secret, Bearer Token ou Access Token.</p>
+      <button id="saveAndLogin" class="primary">Salvar e entrar com X</button>
+      <button id="clearConfig" class="secondary">Apagar configuração local</button>
+    </section>
+
+    <section class="card hidden" id="connectedCard">
+      <div class="status-line">
+        <span class="dot"></span>
+        <strong>OAuth conectado</strong>
+      </div>
+      <p id="accountInfo" class="muted">Validando sua sessão…</p>
+      <button id="disconnect" class="secondary">Desconectar</button>
+    </section>
+
+    <section class="card">
+      <h2>Vídeos do X Chat</h2>
+      <div id="libraryState" class="empty-state">
+        <div class="play">▶</div>
+        <p>A biblioteca será carregada aqui na próxima etapa, depois que validarmos o OAuth.</p>
+      </div>
+    </section>
+
+    <section class="card small">
+      <h3>Callback configurado</h3>
+      <code id="callbackUri">https://cmckauan-rgb.github.io/x-chat-player/callback.html</code>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
