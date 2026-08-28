@@ -8,7 +8,14 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>X Chat Player</title>
-  <link rel="stylesheet" href="styles.css?v=20260828-v9">
+  <link rel="stylesheet" href="styles.css?v=20260828-v10">
+  <script type="importmap">
+  {
+    "imports": {
+      "juicebox-sdk": "./vendor/juicebox-sdk-entry.js?v=20260828-v10"
+    }
+  }
+  </script>
 </head>
 <body>
   <main class="shell">
@@ -17,7 +24,7 @@
       <div>
         <p class="eyebrow">PROTÓTIPO</p>
         <h1>X Chat Player</h1>
-        <p class="muted">Entre com sua conta do X usando OAuth 2.0 + PKCE. O Client Secret fica somente no Cloudflare Worker.</p>
+        <p class="muted">Entre com sua conta do X usando OAuth 2.0 + PKCE. O Client Secret fica somente no Cloudflare Worker e o PIN do X Chat fica somente no navegador.</p>
       </div>
     </section>
 
@@ -53,6 +60,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=20260828-v9"></script>
+  <script src="app.js?v=20260828-v10"></script>
 </body>
 </html>
