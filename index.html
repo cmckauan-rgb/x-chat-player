@@ -8,7 +8,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>X Chat Player</title>
-  <link rel="stylesheet" href="styles.css?v=20260828-v6">
+  <link rel="stylesheet" href="styles.css?v=20260828-v7">
 </head>
 <body>
   <main class="shell">
@@ -17,15 +17,15 @@
       <div>
         <p class="eyebrow">PROTÓTIPO</p>
         <h1>X Chat Player</h1>
-        <p class="muted">Entre com sua conta do X usando OAuth 2.0 + PKCE. Nenhum Client Secret é salvo neste site.</p>
+        <p class="muted">Entre com sua conta do X usando OAuth 2.0 + PKCE. O Client Secret fica somente no Cloudflare Worker.</p>
       </div>
     </section>
 
     <section class="card" id="setupCard">
       <h2>Conectar ao X</h2>
       <label for="clientId">Client ID do OAuth 2.0</label>
-      <input id="clientId" type="text" autocomplete="off" spellcheck="false" placeholder="Cole o Client ID atual do Native App">
-      <p class="hint">Use o Client ID OAuth 2.0 atual mostrado no X Developer depois de salvar o tipo Native App. O site agora rejeita Client IDs confidenciais antigos.</p>
+      <input id="clientId" type="text" autocomplete="off" spellcheck="false" placeholder="Cole o Client ID mostrado no X Developer">
+      <p class="hint">Cole somente o Client ID. O Client Secret não deve ser colocado aqui.</p>
       <button id="saveAndLogin" class="primary">Salvar e entrar com X</button>
       <button id="clearConfig" class="secondary">Apagar configuração local</button>
     </section>
@@ -53,6 +53,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=20260828-v6"></script>
+  <script src="app.js?v=20260828-v7"></script>
 </body>
 </html>
