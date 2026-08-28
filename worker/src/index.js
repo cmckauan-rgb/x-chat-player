@@ -1,5 +1,6 @@
 const ALLOWED_ORIGIN = 'https://cmckauan-rgb.github.io';
 const TOKEN_URL = 'https://api.x.com/2/oauth2/token';
+const ME_URL = 'https://api.x.com/2/users/me?user.fields=username,name,profile_image_url';
 const REDIRECT_URI = 'https://cmckauan-rgb.github.io/x-chat-player/callback.html';
 
 function corsHeaders(origin) {
@@ -7,7 +8,7 @@ function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'POST,OPTIONS,GET',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
     'Cache-Control': 'no-store',
     'Vary': 'Origin'
@@ -22,6 +23,30 @@ function json(data, status = 200, origin = ALLOWED_ORIGIN) {
       'Content-Type': 'application/json; charset=utf-8'
     }
   });
+}
+
+async function proxyMe(request, origin) {
+  const authorization = request.headers.get('Authorization') || '';
+  if (!authorization.startsWith('Bearer ')) {
+    return json({ error: 'missing_bearer_token' }, 401, origin);
+  }
+
+  try {
+    const upstream = await fetch(ME_URL, {
+      headers: { Authorization: authorization }
+    });
+
+    const body = await upstream.text();
+    return new Response(body, {
+      status: upstream.status,
+      headers: {
+        ...corsHeaders(origin),
+        'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8'
+      }
+    });
+  } catch (error) {
+    return json({ error: 'x_api_fetch_failed', detail: String(error?.message || error) }, 502, origin);
+  }
 }
 
 export default {
@@ -39,16 +64,21 @@ export default {
         service: 'x-chat-oauth-proxy',
         clientMode: 'confidential-pkce',
         secretConfigured: Boolean(env?.X_CLIENT_SECRET),
-        version: 'v7'
+        apiProxy: true,
+        version: 'v8'
       }, 200, origin);
-    }
-
-    if (url.pathname !== '/oauth/token' || request.method !== 'POST') {
-      return json({ error: 'not_found' }, 404, origin);
     }
 
     if (origin !== ALLOWED_ORIGIN) {
       return json({ error: 'origin_not_allowed' }, 403, ALLOWED_ORIGIN);
+    }
+
+    if (url.pathname === '/x/me' && request.method === 'GET') {
+      return proxyMe(request, origin);
+    }
+
+    if (url.pathname !== '/oauth/token' || request.method !== 'POST') {
+      return json({ error: 'not_found' }, 404, origin);
     }
 
     if (!env?.X_CLIENT_SECRET) {
@@ -72,8 +102,6 @@ export default {
     const upstreamBody = new URLSearchParams();
     upstreamBody.set('grant_type', grantType);
 
-    // X confidential clients authenticate the token endpoint using HTTP Basic.
-    // The Client Secret stays only in the Cloudflare Worker runtime.
     const basic = btoa(`${clientId}:${env.X_CLIENT_SECRET}`);
     const upstreamHeaders = {
       'Content-Type': 'application/x-www-form-urlencoded',
