@@ -21,6 +21,18 @@ async function sha256Base64Url(value) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+function saveOAuthTransaction(verifier, state) {
+  // sessionStorage is ideal when the same tab returns from X.
+  sessionStorage.setItem('x_pkce_verifier', verifier);
+  sessionStorage.setItem('x_oauth_state', state);
+
+  // Mobile browsers/custom tabs can return in a different browsing context,
+  // so keep a short-lived fallback on the same GitHub Pages origin.
+  localStorage.setItem('x_pkce_verifier', verifier);
+  localStorage.setItem('x_oauth_state', state);
+  localStorage.setItem('x_oauth_started_at', String(Date.now()));
+}
+
 async function startLogin() {
   const clientId = $('clientId').value.trim();
   if (!clientId) {
@@ -34,8 +46,7 @@ async function startLogin() {
   const challenge = await sha256Base64Url(verifier);
   const state = randomBase64Url(24);
 
-  sessionStorage.setItem('x_pkce_verifier', verifier);
-  sessionStorage.setItem('x_oauth_state', state);
+  saveOAuthTransaction(verifier, state);
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -47,7 +58,7 @@ async function startLogin() {
     code_challenge_method: 'S256'
   });
 
-  location.href = `${AUTHORIZE_URL}?${params.toString()}`;
+  location.assign(`${AUTHORIZE_URL}?${params.toString()}`);
 }
 
 async function validateSession() {
@@ -82,6 +93,9 @@ function disconnect() {
 
 function clearConfig() {
   localStorage.removeItem('x_client_id');
+  localStorage.removeItem('x_pkce_verifier');
+  localStorage.removeItem('x_oauth_state');
+  localStorage.removeItem('x_oauth_started_at');
   sessionStorage.clear();
   $('clientId').value = '';
 }
