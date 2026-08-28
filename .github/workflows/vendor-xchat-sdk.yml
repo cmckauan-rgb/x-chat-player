@@ -1,0 +1,59 @@
+name: Vendor X Chat SDK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vendor-xchat-sdk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pinned SDKs
+        run: npm install --no-save --ignore-scripts @xdevplatform/chat-xdk@0.5.0 juicebox-sdk@0.3.7
+
+      - name: Copy browser packages
+        shell: bash
+        run: |
+          rm -rf vendor
+          mkdir -p vendor
+          cp -R node_modules/@xdevplatform/chat-xdk vendor/chat-xdk
+          cp -R node_modules/juicebox-sdk vendor/juicebox-sdk
+          node <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('node_modules/juicebox-sdk/package.json', 'utf8'));
+          function pick(value) {
+            if (typeof value === 'string') return value;
+            if (!value || typeof value !== 'object') return null;
+            return pick(value.browser) || pick(value.import) || pick(value.default) || pick(value.module);
+          }
+          let entry = pick(pkg.exports?.['.']) || pick(pkg.exports) || pkg.module || pkg.browser || pkg.main || 'index.js';
+          entry = String(entry).replace(/^\.\//, '');
+          fs.writeFileSync('vendor/juicebox-sdk-entry.js', `export * from './juicebox-sdk/${entry}';\n`);
+          NODE
+
+      - name: Commit vendored SDKs
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add vendor
+          if git diff --cached --quiet; then
+            echo 'Vendor files already current.'
+          else
+            git commit -m 'Vendor pinned X Chat SDKs [skip ci]'
+            git push
+          fi
