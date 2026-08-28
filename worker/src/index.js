@@ -1,6 +1,7 @@
 const ALLOWED_ORIGIN = 'https://cmckauan-rgb.github.io';
 const TOKEN_URL = 'https://api.x.com/2/oauth2/token';
 const ME_URL = 'https://api.x.com/2/users/me?user.fields=username,name,profile_image_url';
+const CONVERSATIONS_URL = 'https://api.x.com/2/chat/conversations';
 const REDIRECT_URI = 'https://cmckauan-rgb.github.io/x-chat-player/callback.html';
 
 function corsHeaders(origin) {
@@ -25,14 +26,19 @@ function json(data, status = 200, origin = ALLOWED_ORIGIN) {
   });
 }
 
-async function proxyMe(request, origin) {
+function bearerFrom(request) {
   const authorization = request.headers.get('Authorization') || '';
-  if (!authorization.startsWith('Bearer ')) {
+  return authorization.startsWith('Bearer ') ? authorization : null;
+}
+
+async function proxyJsonGet(request, origin, upstreamUrl) {
+  const authorization = bearerFrom(request);
+  if (!authorization) {
     return json({ error: 'missing_bearer_token' }, 401, origin);
   }
 
   try {
-    const upstream = await fetch(ME_URL, {
+    const upstream = await fetch(upstreamUrl, {
       headers: { Authorization: authorization }
     });
 
@@ -65,7 +71,8 @@ export default {
         clientMode: 'confidential-pkce',
         secretConfigured: Boolean(env?.X_CLIENT_SECRET),
         apiProxy: true,
-        version: 'v8'
+        chatBootstrapProxy: true,
+        version: 'v9'
       }, 200, origin);
     }
 
@@ -74,7 +81,38 @@ export default {
     }
 
     if (url.pathname === '/x/me' && request.method === 'GET') {
-      return proxyMe(request, origin);
+      return proxyJsonGet(request, origin, ME_URL);
+    }
+
+    if (url.pathname === '/x/chat/conversations' && request.method === 'GET') {
+      const upstream = new URL(CONVERSATIONS_URL);
+      for (const key of ['max_results', 'pagination_token']) {
+        const value = url.searchParams.get(key);
+        if (value) upstream.searchParams.set(key, value);
+      }
+      return proxyJsonGet(request, origin, upstream.toString());
+    }
+
+    const publicKeysMatch = url.pathname.match(/^\/x\/chat\/users\/(\d+)\/public-keys$/);
+    if (publicKeysMatch && request.method === 'GET') {
+      const userId = publicKeysMatch[1];
+      const upstream = new URL(`https://api.x.com/2/users/${userId}/public_keys`);
+      upstream.searchParams.set(
+        'public_key.fields',
+        'public_key_version,public_key,signing_public_key,identity_public_key_signature,juicebox_config'
+      );
+      return proxyJsonGet(request, origin, upstream.toString());
+    }
+
+    const eventsMatch = url.pathname.match(/^\/x\/chat\/conversations\/([^/]+)\/events$/);
+    if (eventsMatch && request.method === 'GET') {
+      const conversationId = encodeURIComponent(decodeURIComponent(eventsMatch[1]));
+      const upstream = new URL(`https://api.x.com/2/chat/conversations/${conversationId}/events`);
+      for (const key of ['max_results', 'pagination_token']) {
+        const value = url.searchParams.get(key);
+        if (value) upstream.searchParams.set(key, value);
+      }
+      return proxyJsonGet(request, origin, upstream.toString());
     }
 
     if (url.pathname !== '/oauth/token' || request.method !== 'POST') {
