@@ -2,6 +2,7 @@ const REDIRECT_URI = 'https://cmckauan-rgb.github.io/x-chat-player/callback.html
 const AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize';
 const ME_URL = 'https://api.x.com/2/users/me?user.fields=username,name,profile_image_url';
 const SCOPES = ['tweet.read', 'users.read', 'dm.read', 'offline.access'].join(' ');
+const COOKIE_PATH = '/x-chat-player/';
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,16 +22,32 @@ async function sha256Base64Url(value) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function saveOAuthTransaction(verifier, state) {
-  // sessionStorage is ideal when the same tab returns from X.
+function setTempCookie(name, value, maxAge = 900) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=${COOKIE_PATH}; Secure; SameSite=Lax`;
+}
+
+function deleteCookie(name) {
+  document.cookie = `${name}=; Max-Age=0; Path=${COOKIE_PATH}; Secure; SameSite=Lax`;
+}
+
+function saveOAuthTransaction(verifier, state, clientId) {
+  const startedAt = String(Date.now());
+
+  // Primary storage for a normal same-tab OAuth round trip.
   sessionStorage.setItem('x_pkce_verifier', verifier);
   sessionStorage.setItem('x_oauth_state', state);
 
-  // Mobile browsers/custom tabs can return in a different browsing context,
-  // so keep a short-lived fallback on the same GitHub Pages origin.
+  // Fallback for Android custom tabs / WebViews that recreate sessionStorage.
   localStorage.setItem('x_pkce_verifier', verifier);
   localStorage.setItem('x_oauth_state', state);
-  localStorage.setItem('x_oauth_started_at', String(Date.now()));
+  localStorage.setItem('x_oauth_started_at', startedAt);
+  localStorage.setItem('x_client_id', clientId);
+
+  // Additional short-lived fallback on the GitHub Pages origin.
+  setTempCookie('x_pkce_verifier', verifier);
+  setTempCookie('x_oauth_state', state);
+  setTempCookie('x_oauth_started_at', startedAt);
+  setTempCookie('x_client_id', clientId);
 }
 
 async function startLogin() {
@@ -40,13 +57,11 @@ async function startLogin() {
     return;
   }
 
-  localStorage.setItem('x_client_id', clientId);
-
   const verifier = randomBase64Url(64);
   const challenge = await sha256Base64Url(verifier);
   const state = randomBase64Url(24);
 
-  saveOAuthTransaction(verifier, state);
+  saveOAuthTransaction(verifier, state, clientId);
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -92,10 +107,10 @@ function disconnect() {
 }
 
 function clearConfig() {
-  localStorage.removeItem('x_client_id');
-  localStorage.removeItem('x_pkce_verifier');
-  localStorage.removeItem('x_oauth_state');
-  localStorage.removeItem('x_oauth_started_at');
+  ['x_client_id', 'x_pkce_verifier', 'x_oauth_state', 'x_oauth_started_at'].forEach((key) => {
+    localStorage.removeItem(key);
+    deleteCookie(key);
+  });
   sessionStorage.clear();
   $('clientId').value = '';
 }
