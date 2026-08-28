@@ -1,0 +1,23 @@
+{
+  "name": "juicebox-sdk",
+  "type": "module",
+  "collaborators": [
+    "Simon Fell <simon@juicebox.me>",
+    "Diego Ongaro <diego@juicebox.me>",
+    "Nora Trapp <nora@juicebox.me>"
+  ],
+  "version": "0.3.7",
+  "license": "MIT",
+  "files": [
+    "juicebox-sdk_bg.wasm",
+    "juicebox-sdk.js",
+    "juicebox-sdk_bg.js",
+    "juicebox-sdk.d.ts"
+  ],
+  "main": "juicebox-sdk.js",
+  "types": "juicebox-sdk.d.ts",
+  "sideEffects": [
+    "./juicebox-sdk.js",
+    "./snippets/*"
+  ]
+}

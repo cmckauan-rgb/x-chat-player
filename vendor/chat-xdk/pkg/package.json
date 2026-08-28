@@ -1,0 +1,21 @@
+{
+  "name": "chat-xdk-wasm",
+  "type": "module",
+  "description": "X Chat SDK - WebAssembly bindings for JavaScript/TypeScript",
+  "version": "0.5.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xdevplatform/chat-xdk"
+  },
+  "files": [
+    "chat_xdk_wasm_bg.wasm",
+    "chat_xdk_wasm.js",
+    "chat_xdk_wasm.d.ts"
+  ],
+  "main": "chat_xdk_wasm.js",
+  "types": "chat_xdk_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
