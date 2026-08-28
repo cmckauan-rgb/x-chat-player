@@ -2,6 +2,7 @@ const REDIRECT_URI = 'https://cmckauan-rgb.github.io/x-chat-player/callback.html
 const AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize';
 const WORKER_BASE = 'https://x-chat-player.cmckauan.workers.dev';
 const ME_URL = `${WORKER_BASE}/x/me`;
+const CONVERSATIONS_URL = `${WORKER_BASE}/x/chat/conversations`;
 const SCOPES = ['tweet.read', 'users.read', 'dm.read', 'offline.access'].join(' ');
 const COOKIE_PATH = '/x-chat-player/';
 
@@ -74,6 +75,69 @@ async function startLogin() {
   location.assign(`${AUTHORIZE_URL}?${params.toString()}`);
 }
 
+async function fetchJson(url, token) {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store'
+  });
+
+  const text = await res.text();
+  let json = {};
+  try { json = JSON.parse(text); } catch (_) {}
+
+  if (!res.ok) {
+    const detail = json?.detail || json?.error || json?.title || text || `HTTP ${res.status}`;
+    throw new Error(detail);
+  }
+  return json;
+}
+
+function normalizeDataArray(payload) {
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (payload?.data && typeof payload.data === 'object') return [payload.data];
+  return [];
+}
+
+async function loadChatBootstrap(token, user) {
+  if (!$('libraryState') || !user?.id) return;
+
+  $('libraryState').innerHTML = '<div class="spinner small-spinner" aria-hidden="true"></div><p>Buscando conversas e chaves do X Chat…</p>';
+
+  try {
+    const [conversationsPayload, keysPayload] = await Promise.all([
+      fetchJson(CONVERSATIONS_URL, token),
+      fetchJson(`${WORKER_BASE}/x/chat/users/${encodeURIComponent(user.id)}/public-keys`, token)
+    ]);
+
+    const conversations = normalizeDataArray(conversationsPayload);
+    const keyRecords = normalizeDataArray(keysPayload);
+    const keyRecord = keyRecords[0] || null;
+
+    sessionStorage.setItem('x_user_id', String(user.id));
+    sessionStorage.setItem('x_chat_conversations', JSON.stringify(conversations));
+
+    if (keyRecord) {
+      sessionStorage.setItem('x_chat_key_version', String(keyRecord.public_key_version || keyRecord.version || ''));
+      if (keyRecord.juicebox_config) {
+        sessionStorage.setItem('x_chat_has_juicebox_config', '1');
+      }
+    }
+
+    const count = conversations.length;
+    const keyStatus = keyRecord ? 'Registro criptográfico encontrado.' : 'Nenhum registro criptográfico foi retornado.';
+    $('libraryState').innerHTML = `
+      <div class="play">✓</div>
+      <p><strong>${count} conversa${count === 1 ? '' : 's'} encontrada${count === 1 ? '' : 's'}.</strong><br>${keyStatus}</p>
+      <p class="hint">Próxima etapa: desbloquear a criptografia do X Chat no próprio navegador e localizar as mensagens com vídeo.</p>
+    `;
+  } catch (error) {
+    $('libraryState').innerHTML = `
+      <div class="play">!</div>
+      <p>OAuth validado, mas não foi possível carregar o X Chat: ${String(error.message || error)}</p>
+    `;
+  }
+}
+
 async function validateSession() {
   const token = sessionStorage.getItem('x_access_token');
   if (!token) return;
@@ -83,37 +147,23 @@ async function validateSession() {
   $('accountInfo').textContent = 'Validando sua sessão pelo Cloudflare Worker…';
 
   try {
-    const res = await fetch(ME_URL, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store'
-    });
-
-    const text = await res.text();
-    let json = {};
-    try { json = JSON.parse(text); } catch (_) {}
-
-    if (!res.ok) {
-      const detail = json?.detail || json?.error || text || `HTTP ${res.status}`;
-      throw new Error(detail);
-    }
-
+    const json = await fetchJson(ME_URL, token);
     const user = json.data;
+
     $('accountInfo').textContent = user?.username
       ? `Conectado como @${user.username}. OAuth e acesso à API validados.`
       : 'Conectado ao X. OAuth e acesso à API validados.';
 
-    if ($('libraryState')) {
-      $('libraryState').innerHTML = '<div class="play">▶</div><p>Conexão validada. Próxima etapa: carregar os vídeos do X Chat.</p>';
-    }
+    await loadChatBootstrap(token, user);
   } catch (error) {
     $('accountInfo').textContent = `OAuth concluído, mas a validação da API falhou: ${error.message}`;
   }
 }
 
 function disconnect() {
-  sessionStorage.removeItem('x_access_token');
-  sessionStorage.removeItem('x_refresh_token');
-  sessionStorage.removeItem('x_token_expires_at');
+  ['x_access_token', 'x_refresh_token', 'x_token_expires_at', 'x_user_id', 'x_chat_conversations', 'x_chat_key_version', 'x_chat_has_juicebox_config'].forEach((key) => {
+    sessionStorage.removeItem(key);
+  });
   location.href = './';
 }
 
