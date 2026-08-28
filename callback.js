@@ -1,5 +1,5 @@
 const REDIRECT_URI = 'https://cmckauan-rgb.github.io/x-chat-player/callback.html';
-const TOKEN_URL = 'https://api.x.com/2/oauth2/token';
+const TOKEN_URL = 'https://x-chat-player.cmckauan.workers.dev/oauth/token';
 const OAUTH_TTL_MS = 15 * 60 * 1000;
 const COOKIE_PATH = '/x-chat-player/';
 
@@ -55,7 +55,7 @@ async function exchangeCode() {
 
   if (!code) return fail('O callback não recebeu o código de autorização.');
   if (!clientId) return fail('Client ID não encontrado no retorno. Volte ao início e inicie um novo login.');
-  if (!verifier) return fail('PKCE v3: o verificador ainda não chegou ao callback. Volte ao início e inicie um novo login.');
+  if (!verifier) return fail('PKCE v4: o verificador ainda não chegou ao callback. Volte ao início e inicie um novo login.');
   if (startedAt && Date.now() - startedAt > OAUTH_TTL_MS) {
     clearOAuthTransaction();
     return fail('Esta tentativa de login expirou. Volte ao início e entre novamente.');
@@ -96,10 +96,10 @@ async function exchangeCode() {
     clearOAuthTransaction();
 
     title.textContent = 'Conectado!';
-    message.textContent = 'OAuth concluído. Voltando para o player…';
+    message.textContent = 'OAuth concluído pelo Worker. Voltando para o player…';
     setTimeout(() => location.replace('./?connected=1'), 700);
   } catch (e) {
-    fail(`A troca do código por token falhou: ${e.message}.`);
+    fail(`OAuth v4: a troca do código por token falhou: ${e.message}.`);
   }
 }
 
