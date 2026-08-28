@@ -25,7 +25,7 @@ function json(data, status = 200, origin = ALLOWED_ORIGIN) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') || ALLOWED_ORIGIN;
 
@@ -34,7 +34,11 @@ export default {
     }
 
     if (url.pathname === '/health' && request.method === 'GET') {
-      return json({ ok: true, service: 'x-chat-oauth-proxy' }, 200, origin);
+      return json({
+        ok: true,
+        service: 'x-chat-oauth-proxy',
+        confidentialClientConfigured: Boolean(env?.X_CLIENT_SECRET)
+      }, 200, origin);
     }
 
     if (url.pathname !== '/oauth/token' || request.method !== 'POST') {
@@ -61,7 +65,19 @@ export default {
 
     const upstreamBody = new URLSearchParams();
     upstreamBody.set('grant_type', grantType);
-    upstreamBody.set('client_id', clientId);
+
+    const upstreamHeaders = {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    };
+
+    // Native/SPA apps are public clients and send client_id in the body.
+    // Web App / Automated App / Bot are confidential clients and authenticate
+    // with HTTP Basic using Client ID + Client Secret.
+    if (env?.X_CLIENT_SECRET) {
+      upstreamHeaders.Authorization = `Basic ${btoa(`${clientId}:${env.X_CLIENT_SECRET}`)}`;
+    } else {
+      upstreamBody.set('client_id', clientId);
+    }
 
     if (grantType === 'authorization_code') {
       const code = String(incoming.get('code') || '');
@@ -88,9 +104,7 @@ export default {
     try {
       const upstream = await fetch(TOKEN_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
+        headers: upstreamHeaders,
         body: upstreamBody.toString()
       });
 
