@@ -25,7 +25,7 @@ function json(data, status = 200, origin = ALLOWED_ORIGIN) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request) {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') || ALLOWED_ORIGIN;
 
@@ -37,7 +37,8 @@ export default {
       return json({
         ok: true,
         service: 'x-chat-oauth-proxy',
-        confidentialClientConfigured: Boolean(env?.X_CLIENT_SECRET)
+        clientMode: 'public-pkce',
+        version: 'v5'
       }, 200, origin);
     }
 
@@ -63,21 +64,13 @@ export default {
       return json({ error: 'missing_client_id' }, 400, origin);
     }
 
+    // This project uses X OAuth 2.0 Authorization Code + PKCE as a public client.
+    // The X app must therefore be configured as Native App (or Single Page App,
+    // if that option is available). Public clients authenticate the token request
+    // with client_id in the form body and do not use a Client Secret.
     const upstreamBody = new URLSearchParams();
     upstreamBody.set('grant_type', grantType);
-
-    const upstreamHeaders = {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    };
-
-    // Native/SPA apps are public clients and send client_id in the body.
-    // Web App / Automated App / Bot are confidential clients and authenticate
-    // with HTTP Basic using Client ID + Client Secret.
-    if (env?.X_CLIENT_SECRET) {
-      upstreamHeaders.Authorization = `Basic ${btoa(`${clientId}:${env.X_CLIENT_SECRET}`)}`;
-    } else {
-      upstreamBody.set('client_id', clientId);
-    }
+    upstreamBody.set('client_id', clientId);
 
     if (grantType === 'authorization_code') {
       const code = String(incoming.get('code') || '');
@@ -104,7 +97,9 @@ export default {
     try {
       const upstream = await fetch(TOKEN_URL, {
         method: 'POST',
-        headers: upstreamHeaders,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
         body: upstreamBody.toString()
       });
 
