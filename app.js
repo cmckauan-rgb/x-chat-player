@@ -30,20 +30,36 @@ function deleteCookie(name) {
   document.cookie = `${name}=; Max-Age=0; Path=${COOKIE_PATH}; Secure; SameSite=Lax`;
 }
 
+function decodeClientId(clientId) {
+  try {
+    const normalized = clientId.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    return atob(padded);
+  } catch (_) {
+    return '';
+  }
+}
+
+function isConfidentialClientId(clientId) {
+  return decodeClientId(clientId).endsWith(':ci');
+}
+
+function clearStoredClientId() {
+  localStorage.removeItem('x_client_id');
+  deleteCookie('x_client_id');
+}
+
 function saveOAuthTransaction(verifier, state, clientId) {
   const startedAt = String(Date.now());
 
-  // Primary storage for a normal same-tab OAuth round trip.
   sessionStorage.setItem('x_pkce_verifier', verifier);
   sessionStorage.setItem('x_oauth_state', state);
 
-  // Fallback for Android custom tabs / WebViews that recreate sessionStorage.
   localStorage.setItem('x_pkce_verifier', verifier);
   localStorage.setItem('x_oauth_state', state);
   localStorage.setItem('x_oauth_started_at', startedAt);
   localStorage.setItem('x_client_id', clientId);
 
-  // Additional short-lived fallback on the GitHub Pages origin.
   setTempCookie('x_pkce_verifier', verifier);
   setTempCookie('x_oauth_state', state);
   setTempCookie('x_oauth_started_at', startedAt);
@@ -54,6 +70,13 @@ async function startLogin() {
   const clientId = $('clientId').value.trim();
   if (!clientId) {
     alert('Informe o Client ID do OAuth 2.0.');
+    return;
+  }
+
+  if (isConfidentialClientId(clientId)) {
+    clearStoredClientId();
+    $('clientId').value = '';
+    alert('Este Client ID é de um cliente confidencial antigo. No X Developer, deixe o app como Native App e copie o Client ID OAuth 2.0 atual. Depois cole o novo Client ID aqui.');
     return;
   }
 
@@ -116,7 +139,14 @@ function clearConfig() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  $('clientId').value = localStorage.getItem('x_client_id') || '';
+  const cachedClientId = localStorage.getItem('x_client_id') || '';
+  if (cachedClientId && isConfidentialClientId(cachedClientId)) {
+    clearStoredClientId();
+    $('clientId').value = '';
+  } else {
+    $('clientId').value = cachedClientId;
+  }
+
   $('saveAndLogin').addEventListener('click', startLogin);
   $('disconnect').addEventListener('click', disconnect);
   $('clearConfig').addEventListener('click', clearConfig);
