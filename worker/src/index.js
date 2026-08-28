@@ -25,7 +25,7 @@ function json(data, status = 200, origin = ALLOWED_ORIGIN) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') || ALLOWED_ORIGIN;
 
@@ -37,8 +37,9 @@ export default {
       return json({
         ok: true,
         service: 'x-chat-oauth-proxy',
-        clientMode: 'public-pkce',
-        version: 'v5'
+        clientMode: 'confidential-pkce',
+        secretConfigured: Boolean(env?.X_CLIENT_SECRET),
+        version: 'v7'
       }, 200, origin);
     }
 
@@ -48,6 +49,10 @@ export default {
 
     if (origin !== ALLOWED_ORIGIN) {
       return json({ error: 'origin_not_allowed' }, 403, ALLOWED_ORIGIN);
+    }
+
+    if (!env?.X_CLIENT_SECRET) {
+      return json({ error: 'x_client_secret_not_configured' }, 500, origin);
     }
 
     let incoming;
@@ -64,13 +69,16 @@ export default {
       return json({ error: 'missing_client_id' }, 400, origin);
     }
 
-    // This project uses X OAuth 2.0 Authorization Code + PKCE as a public client.
-    // The X app must therefore be configured as Native App (or Single Page App,
-    // if that option is available). Public clients authenticate the token request
-    // with client_id in the form body and do not use a Client Secret.
     const upstreamBody = new URLSearchParams();
     upstreamBody.set('grant_type', grantType);
-    upstreamBody.set('client_id', clientId);
+
+    // X confidential clients authenticate the token endpoint using HTTP Basic.
+    // The Client Secret stays only in the Cloudflare Worker runtime.
+    const basic = btoa(`${clientId}:${env.X_CLIENT_SECRET}`);
+    const upstreamHeaders = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basic}`
+    };
 
     if (grantType === 'authorization_code') {
       const code = String(incoming.get('code') || '');
@@ -97,9 +105,7 @@ export default {
     try {
       const upstream = await fetch(TOKEN_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
+        headers: upstreamHeaders,
         body: upstreamBody.toString()
       });
 
