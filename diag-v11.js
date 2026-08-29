@@ -1,6 +1,10 @@
 (() => {
   const originalFetch = window.fetch.bind(window);
   const mediaRecords = [];
+  const MEDIA_TIMEOUT_MS = 45000;
+  const MB = 1024 * 1024;
+  let mediaAttempt = 0;
+  let lastRenderedKey = '';
 
   function requestUrl(input) {
     if (typeof input === 'string') return input;
@@ -16,35 +20,147 @@
       .slice(0, 220);
   }
 
-  window.fetch = async (...args) => {
-    const url = requestUrl(args[0]);
+  function formatBytes(bytes) {
+    const value = Number(bytes) || 0;
+    if (value < 1024) return `${value} B`;
+    if (value < MB) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / MB).toFixed(2)} MB`;
+  }
+
+  function setMediaStatus(text) {
+    const status = document.getElementById('mediaStatus');
+    if (status) status.textContent = text;
+  }
+
+  function joinChunks(chunks, total) {
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return out;
+  }
+
+  window.fetch = async (input, init = {}) => {
+    const url = requestUrl(input);
+    if (!url.includes('/x/chat/media/')) {
+      return originalFetch(input, init);
+    }
+
+    const attempt = ++mediaAttempt;
+    const controller = new AbortController();
+    const callerSignal = init?.signal || (input instanceof Request ? input.signal : null);
+    let timedOut = false;
+    let received = 0;
+    let expected = 0;
+    let contentType = '';
+    const startedAt = performance.now();
+
+    const relayAbort = () => controller.abort(callerSignal?.reason);
+    if (callerSignal) {
+      if (callerSignal.aborted) relayAbort();
+      else callerSignal.addEventListener('abort', relayAbort, { once: true });
+    }
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new DOMException('Tempo limite do download atingido', 'AbortError'));
+    }, MEDIA_TIMEOUT_MS);
+
+    setMediaStatus(`Mídia ${attempt}: iniciando download…`);
+
     try {
-      const response = await originalFetch(...args);
-      if (url.includes('/x/chat/media/')) {
-        const record = {
-          status: response.status,
-          ok: response.ok,
-          contentType: response.headers.get('content-type') || '',
-          detail: ''
-        };
-        if (!response.ok) {
-          try {
-            record.detail = cleanDetail(await response.clone().text());
-          } catch (_) {}
+      const response = await originalFetch(input, { ...init, signal: controller.signal });
+      expected = Number(response.headers.get('content-length')) || 0;
+      contentType = response.headers.get('content-type') || '';
+
+      const reader = response.body?.getReader?.();
+      const chunks = [];
+      let lastUiUpdate = 0;
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!value?.byteLength) continue;
+          chunks.push(value);
+          received += value.byteLength;
+
+          const now = performance.now();
+          if (now - lastUiUpdate > 150) {
+            const pct = expected ? Math.min(100, Math.round((received / expected) * 100)) : null;
+            setMediaStatus(
+              expected
+                ? `Mídia ${attempt}: baixando… ${pct}% (${formatBytes(received)} de ${formatBytes(expected)})`
+                : `Mídia ${attempt}: baixando… ${formatBytes(received)} recebidos`
+            );
+            lastUiUpdate = now;
+          }
         }
-        mediaRecords.push(record);
+      } else {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        chunks.push(bytes);
+        received = bytes.byteLength;
       }
-      return response;
+
+      const bytes = joinChunks(chunks, received);
+      const durationMs = Math.round(performance.now() - startedAt);
+      let detail = '';
+
+      if (!response.ok) {
+        try { detail = cleanDetail(new TextDecoder().decode(bytes)); } catch (_) {}
+      }
+
+      mediaRecords.push({
+        status: response.status,
+        ok: response.ok,
+        contentType,
+        detail,
+        bytes: received,
+        expected,
+        durationMs,
+        timedOut: false,
+        stage: response.ok ? 'download-complete' : 'http-error'
+      });
+
+      if (response.ok) {
+        setMediaStatus(`Mídia ${attempt}: download concluído (${formatBytes(received)} em ${(durationMs / 1000).toFixed(1)} s). Descriptografando…`);
+      }
+
+      return new Response(bytes, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers
+      });
     } catch (error) {
-      if (url.includes('/x/chat/media/')) {
-        mediaRecords.push({
-          status: 0,
-          ok: false,
-          contentType: '',
-          detail: cleanDetail(error?.message || error || 'Falha de rede')
-        });
-      }
+      const durationMs = Math.round(performance.now() - startedAt);
+      const detail = timedOut
+        ? `Timeout após ${Math.round(MEDIA_TIMEOUT_MS / 1000)} s; ${formatBytes(received)} recebidos.`
+        : cleanDetail(error?.message || error || 'Falha de rede');
+
+      mediaRecords.push({
+        status: 0,
+        ok: false,
+        contentType,
+        detail,
+        bytes: received,
+        expected,
+        durationMs,
+        timedOut,
+        stage: timedOut ? 'timeout' : 'network-error'
+      });
+
+      setMediaStatus(
+        timedOut
+          ? `Mídia ${attempt}: download cancelado por timeout após 45 s (${formatBytes(received)} recebidos).`
+          : `Mídia ${attempt}: falha de download — ${detail}`
+      );
+
       throw error;
+    } finally {
+      clearTimeout(timer);
+      if (callerSignal) callerSignal.removeEventListener('abort', relayAbort);
     }
   };
 
@@ -54,8 +170,11 @@
     if (!status || !actions) return;
 
     const text = status.textContent || '';
-    if (!/(vídeo|mídia|falha|carregado)/i.test(text)) return;
-    if (!/falha|carregado/i.test(text)) return;
+    if (!/(falha|carregado|timeout|cancelado)/i.test(text)) return;
+
+    const key = `${text}|${JSON.stringify(mediaRecords)}`;
+    if (key === lastRenderedKey) return;
+    lastRenderedKey = key;
 
     document.getElementById('mediaDiagnostics')?.remove();
 
@@ -70,11 +189,13 @@
     const summary = document.createElement('p');
     if (!mediaRecords.length) {
       summary.textContent = 'Nenhuma requisição de mídia chegou a ser feita. O anexo pode ter sido filtrado antes do download.';
+    } else if (mediaRecords.some((item) => item.timedOut)) {
+      summary.textContent = 'Pelo menos um download excedeu 45 segundos e foi cancelado automaticamente.';
     } else if (mediaRecords.some((item) => !item.ok)) {
       const failed = mediaRecords.filter((item) => !item.ok).length;
-      summary.textContent = `${mediaRecords.length} download(s) tentado(s); ${failed} falharam na própria API/Worker.`;
+      summary.textContent = `${mediaRecords.length} download(s) tentado(s); ${failed} falharam na API, Worker ou rede.`;
     } else if (/falha/i.test(text)) {
-      summary.textContent = `Todos os ${mediaRecords.length} download(s) responderam HTTP 200. A falha aconteceu depois do download, durante a descriptografia ou interpretação do arquivo.`;
+      summary.textContent = `Todos os ${mediaRecords.length} download(s) terminaram. A falha aconteceu depois do download, durante a descriptografia ou interpretação do arquivo.`;
     } else {
       summary.textContent = `${mediaRecords.length} download(s) concluído(s) sem erro HTTP.`;
     }
@@ -83,17 +204,23 @@
     mediaRecords.forEach((item, index) => {
       const line = document.createElement('p');
       line.className = 'diagnostic-line';
-      const http = item.status ? `HTTP ${item.status}` : 'erro de rede';
+      const http = item.timedOut ? 'TIMEOUT' : (item.status ? `HTTP ${item.status}` : 'erro de rede');
       const type = item.contentType ? ` · ${item.contentType}` : '';
+      const size = ` · ${formatBytes(item.bytes)}` + (item.expected ? ` / ${formatBytes(item.expected)}` : '');
+      const time = item.durationMs ? ` · ${(item.durationMs / 1000).toFixed(1)} s` : '';
       const detail = item.detail ? ` · ${item.detail}` : '';
-      line.textContent = `Mídia ${index + 1}: ${http}${type}${detail}`;
+      line.textContent = `Mídia ${index + 1}: ${http}${type}${size}${time}${detail}`;
       box.appendChild(line);
     });
 
     actions.appendChild(box);
   }
 
-  const observer = new MutationObserver(() => renderDiagnostics());
+  let renderTimer = null;
+  const observer = new MutationObserver(() => {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(renderDiagnostics, 80);
+  });
   observer.observe(document.documentElement, {
     subtree: true,
     childList: true,
